@@ -1,0 +1,32 @@
+[project]
+name = "projector-mapper"
+version = "0.1.0"
+description = "Computer vision pipeline for automated projector-to-house feature alignment"
+authors = [{ name = "Samir", email = "samir@arroyodev.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.9",
+    "pydantic>=2.4",
+    "requests>=2.31",
+    "scipy>=1.11",
+    "PyYAML>=6.0",
+    "loguru>=0.7",
+    "fal-client>=0.4",
+    "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.0",
+    "ruff>=0.4",
+    "mypy>=1.7",
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
