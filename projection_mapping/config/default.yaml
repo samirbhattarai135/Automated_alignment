@@ -42,6 +42,7 @@ pipeline:
       prompt_map:
         window: "glass window pane"
         door: "entrance door"
+        house: "entire house facade"
 
       mask_only: true
       fill_holes: true

@@ -150,13 +150,7 @@ def main():
     
     print(f"\n✨ Test complete!")
     print(f"\n📁 Output files saved to: {output_dir}")
-    print(f"   - test_house_detections_all.jpg (all detections visualized)")
-    print(f"   - test_house_mask_*.png (individual masks per class)")
-    print(f"   - test_house_overlay_*.jpg (colored overlays)")
-    print(f"   - test_house_mask_combined.png (all masks combined)")
-    
-    # Print summary
-    print(f"\n📋 Summary:")
+
     print(f"   Total features detected: {len(result.detections)}")
     for label, dets in sorted(by_label.items()):
         print(f"   - {label}: {len(dets)}")
