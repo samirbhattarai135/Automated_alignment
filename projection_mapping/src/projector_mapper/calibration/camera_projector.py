@@ -97,7 +97,7 @@ class CalibrationManager:
         return ProjectorHomography(projector_id=projector_id, homography=homography)
 
     def load_homography(self, projector_id: str) -> np.ndarray:
-        path = self._config.homographies_dir / f"{projector_id}.npy"
+        path = Path("/Users/samir/Projects/Illumibot_alignment/Automated_alignment/projection_mapping/data/calibration/projector_1_homography.npy")
         if not path.exists():
             raise FileNotFoundError(f"Homography file missing for projector {projector_id}: {path}")
         return np.load(path)
