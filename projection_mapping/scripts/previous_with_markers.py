@@ -131,30 +131,52 @@ class MarkerBasedAlignment:
         cv2.destroyWindow("Reference Capture")
         return self.reference_image
     
-    def select_points_on_image(self, image: np.ndarray, window_name: str, num_points: int = 8) -> List[Tuple[int, int]]:
-        """Interactive point selection on an image."""
-        logger.info(f"Starting point selection for {num_points} points on {window_name}...")
+    def select_marker_points(self, num_points: int = 8) -> List[MarkerPoint]:
+        """Interactive point selection on reference image."""
+        logger.info(f"Starting point selection for {num_points} markers...")
+        
         points_selected = []
+        
         def mouse_callback(event, x, y, flags, param):
             if event == cv2.EVENT_LBUTTONDOWN and len(points_selected) < num_points:
-                points_selected.append((x, y))
-                logger.info(f"Point {len(points_selected)} selected at ({x}, {y})")
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(window_name, image.shape[1], image.shape[0])
-        cv2.setMouseCallback(window_name, mouse_callback)
+                point_id = len(points_selected)
+                marker = MarkerPoint(
+                    id=point_id,
+                    projector_pos=(x, y),
+                    color=MARKER_COLORS[point_id % len(MARKER_COLORS)]
+                )
+                points_selected.append(marker)
+                logger.info(f"Point {point_id} selected at ({x}, {y})")
+        
+        cv2.namedWindow("Select Marker Points", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Select Marker Points", 1280, 720)
+        cv2.setMouseCallback("Select Marker Points", mouse_callback)
+        
         print("\n" + "="*60)
-        print(f"POINT SELECTION: {window_name}")
+        print("MARKER POINT SELECTION")
         print("="*60)
-        print(f"Click {num_points} points on key features (corners, windows, etc.)")
+        print(f"Click {num_points} points on key features:")
+        print("  - Corners of buildings")
+        print("  - Window corners")
+        print("  - Door frames")
+        print("  - Any distinctive architectural features")
+        print("\nSpread points across the entire house area")
         print("Press ENTER when all points are selected")
         print("Press ESC to cancel")
         print("="*60 + "\n")
+        
         while True:
-            display = image.copy()
-            for idx, (x, y) in enumerate(points_selected):
-                cv2.circle(display, (x, y), 10, MARKER_COLORS[idx % len(MARKER_COLORS)], -1)
+            display = self.reference_image.copy()
+            
+            # Draw selected points
+            for marker in points_selected:
+                x, y = int(marker.projector_pos[0]), int(marker.projector_pos[1])
+                cv2.circle(display, (x, y), 10, marker.color, -1)
                 cv2.circle(display, (x, y), 12, (255, 255, 255), 2)
-                cv2.putText(display, str(idx), (x + 15, y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.7, MARKER_COLORS[idx % len(MARKER_COLORS)], 2)
+                cv2.putText(display, str(marker.id), (x + 15, y + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, marker.color, 2)
+            
+            # Instructions
             remaining = num_points - len(points_selected)
             if remaining > 0:
                 text = f"Click {remaining} more point(s)"
@@ -162,70 +184,40 @@ class MarkerBasedAlignment:
             else:
                 text = "Press ENTER to continue"
                 color = (0, 255, 0)
-            cv2.putText(display, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-            cv2.imshow(window_name, display)
+            
+            cv2.putText(display, text, (20, 40),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+            
+            cv2.imshow("Select Marker Points", display)
+            
             key = cv2.waitKey(1) & 0xFF
-            if key == 13 and len(points_selected) == num_points:
+            if key == 13 and len(points_selected) == num_points:  # ENTER
                 break
-            elif key == 27:
+            elif key == 27:  # ESC
                 raise KeyboardInterrupt("Point selection cancelled")
-        cv2.destroyWindow(window_name)
-        return points_selected
-    def manual_alignment_workflow(self, house_image: np.ndarray, num_points: int = 8, iteration: int = 1):
-        """Manual alignment workflow: select points on projector and camera, compute homography, verify, and project house image."""
-        blank_overlay = np.zeros((self.proj_height, self.proj_width, 3), dtype=np.uint8)
-        overlay_img = house_image if house_image is not None else blank_overlay
-        projector_points = self.select_points_on_image(overlay_img, f"Projector_{self.projector_id}", num_points)
-
-        print("\nSwitching to camera view for point selection...")
-        ret, frame = self.read_camera()
-        if not ret:
-            raise RuntimeError("Failed to read camera frame for point selection.")
-        camera_points = self.select_points_on_image(frame, "Camera_Point_Selection", num_points)
-
-        proj_pts_np = np.array(projector_points, dtype=np.float32)
-        cam_pts_np = np.array(camera_points, dtype=np.float32)
-        H, mask = cv2.findHomography(cam_pts_np, proj_pts_np, cv2.RANSAC, 5.0)
-        if H is None:
-            print("Homography computation failed. Not enough inliers or degenerate configuration.")
-            return None
-        self.homography = H
-        print(f"Homography computed. Inliers: {np.sum(mask)}/{num_points}")
-
-        # Save homography in homographies folder with iteration number
-        homography_dir = Path(self.config.calibration.homographies_dir)
-        homography_dir.mkdir(parents=True, exist_ok=True)
-        save_path = homography_dir / f"{self.projector_id}_iter{iteration}.npy"
-        np.save(save_path, H)
-        print(f"Homography saved to {save_path}")
-
-        ret, frame = self.read_camera()
-        if not ret:
-            print("Failed to read camera frame for verification.")
-            return None
-        warped_proj_pts = cv2.perspectiveTransform(proj_pts_np[None, :, :], np.linalg.inv(H))[0]
-        verify_img = frame.copy()
-        for idx, (x, y) in enumerate(camera_points):
-            cv2.circle(verify_img, (int(x), int(y)), 10, MARKER_COLORS[idx % len(MARKER_COLORS)], 2)
-        for idx, (wx, wy) in enumerate(warped_proj_pts):
-            cv2.circle(verify_img, (int(wx), int(wy)), 8, (0, 255, 255), 2)
-            cv2.putText(verify_img, f"P{idx}", (int(wx)+10, int(wy)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,255), 2)
-        cv2.imshow("Verification_Camera", verify_img)
-        print("Yellow circles: warped projector points. Colored circles: camera points.")
-        print("Press any key to continue...")
-        cv2.waitKey(0)
-        cv2.destroyWindow("Verification_Camera")
-
-        if house_image is not None:
-            warped_house = cv2.warpPerspective(house_image, H, (self.proj_width, self.proj_height))
-            cv2.namedWindow(f"Final_Projection_{self.projector_id}", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(f"Final_Projection_{self.projector_id}", self.proj_width, self.proj_height)
-            cv2.imshow(f"Final_Projection_{self.projector_id}", warped_house)
-            print("Final house image projected. Press any key to finish.")
-            cv2.waitKey(0)
-            cv2.destroyWindow(f"Final_Projection_{self.projector_id}")
-            return warped_house
-        return None
+        
+        cv2.destroyWindow("Select Marker Points")
+        self.markers = points_selected
+        
+        # Save marker positions
+        marker_data = {
+            "projector_id": self.projector_id,
+            "num_markers": len(self.markers),
+            "markers": [
+                {
+                    "id": m.id,
+                    "projector_pos": m.projector_pos.tolist(),
+                    "color": m.color
+                }
+                for m in self.markers
+            ]
+        }
+        marker_path = self.data_dir / f"{self.projector_id}_markers.yaml"
+        with open(marker_path, 'w') as f:
+            yaml.dump(marker_data, f)
+        logger.info(f"Marker configuration saved to {marker_path}")
+        
+        return self.markers
     
     def create_marker_overlay(self) -> np.ndarray:
         """Create projection overlay with numbered colored markers."""
@@ -522,7 +514,7 @@ class MarkerBasedAlignment:
             
             # Handle keyboard input
             key = cv2.waitKey(1) & 0xFF
-           
+            
             if key == ord('q'):
                 break
             elif key == ord('m'):
@@ -609,28 +601,13 @@ def main():
     try:
         # Step 1: Capture reference image
         aligner.capture_reference_image()
-
-        # Step 2: Load house image for projection (or use blank)
-        house_img_path = Path(aligner.data_dir) / f"{args.projector_id}_reference.jpg"
-        if house_img_path.exists():
-            house_image = cv2.imread(str(house_img_path))
-        else:
-            house_image = None
-
-        # Step 3: Manual alignment workflow (repeatable)
-        iteration = 1
-        current_image = house_image
-        while True:
-            print(f"\n=== Manual Alignment Iteration {iteration} ===")
-            result_image = aligner.manual_alignment_workflow(current_image, num_points=args.num_markers, iteration=iteration)
-            print("\nDo you want to repeat the alignment process for further refinement? (y/n): ", end="")
-            resp = input().strip().lower()
-            if resp != "y":
-                break
-            iteration += 1
-            if result_image is not None:
-                current_image = result_image
-
+        
+        # Step 2: Select marker points
+        aligner.select_marker_points(num_points=args.num_markers)
+        
+        # Step 3: Run alignment loop
+        aligner.run_alignment_loop()
+        
     except KeyboardInterrupt:
         print("\nAlignment cancelled by user")
     except Exception as e:
